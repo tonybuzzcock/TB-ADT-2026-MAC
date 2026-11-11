@@ -355,6 +355,11 @@ private:
         const unsigned int oldCsr = _mm_getcsr();
         _mm_setcsr (oldCsr | 0x8040);   // flush denormals to zero
 #endif
+#if defined(__aarch64__)
+        uint64_t oldFpcr;
+        __asm__ __volatile__ ("mrs %0, fpcr" : "=r" (oldFpcr));
+        __asm__ __volatile__ ("msr fpcr, %0" : : "r" (oldFpcr | (1ull << 24)));   // FZ: flush denormals to zero
+#endif
         // Each side runs through its own copy of the circuit, with the same
         // settings. A mono source (both inputs the same)
         // is processed once and the right side's circuit kept in step.
@@ -381,6 +386,15 @@ private:
             const double l0 = s->unit[0].peakLight(), l1 = s->unit[1].peakLight();
             s->ledLevel.store ((float) (l0 > l1 ? l0 : l1), std::memory_order_relaxed);
         }
+        // No subnormal numbers leave the plugin, whatever the CPU
+        for (uint32_t i = 0; i < n; ++i)
+        {
+            if (std::fabs (outL[i]) < 1.0e-30f) outL[i] = 0.0f;
+            if (outR && std::fabs (outR[i]) < 1.0e-30f) outR[i] = 0.0f;
+        }
+#if defined(__aarch64__)
+        __asm__ __volatile__ ("msr fpcr, %0" : : "r" (oldFpcr));
+#endif
 #if TBADT_HAVE_SSE
         _mm_setcsr (oldCsr);
 #endif
